@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+
+</body>
+</html>
+
+// Site coords
+var siteCoords_features = [
+ee.Feature(ee.Geometry.Point(-69.282000066708,-12.831999897556432 ), {name: 'site'})];
+
+// Creates a FeatureCollection from coords
+var pt_collection = ee.FeatureCollection(siteCoords_features);
+print('Point', pt_collection);
+Map.addLayer(pt_collection);
+Map.centerObject(pt_collection, 10);
+
+// Modis Collection
+var startDate = ee.Date.fromYMD(2015,1,1);
+var endDate = ee.Date.fromYMD(2020,12,31);
+var dataset = ee.ImageCollection('MODIS/006/MOD11A1')
+                  .filterDate(startDate, endDate)
+                  .filterBounds(pt_collection.geometry())
+                   .select('LST_Day_1km');
+
+print("Collection",dataset);
+
+//Map.addLayer(dataset.first());
+
+// Extracted band Scale to Kelvin and convert to Celsius
+var modLSTc = dataset.map(function(img) {
+  return img
+    .multiply(0.02)
+    .subtract(273.15)
+   .copyProperties(img, ['system:time_start', 'system:time_end']);
+});
+
+print('Modis Image Colection processed:', modLSTc);
+//Map.addLayer(modLSTc.mean());
+
+var geometry = pt_collection.geometry();
+var extractData = function(img){
+    var stats = img.reduceRegion({
+      geometry: geometry,
+      scale: 30,
+      reducer: ee.Reducer.first()});
+
+    return ee.Feature(geometry, {
+      value: stats.get('LST_Day_1km'),
+      hourStart: img.get('system:time_start'),
+      hourEnd : img.get('system:time_end'),
+      date: img.get('system:index'),
+      lat: geometry.coordinates().get(0),
+      lon: geometry.coordinates().get(1),
+      });
+
+};
+
+var outputData = modLSTc.map(extractData);
+print('output',outputData);
+
+// Export
+Export.table.toDrive({
+  collection: outputData,
+  folder: 'GEE_results',
+  fileNamePrefix: 'MODIS_LST_2015_2020',
+  fileFormat: 'CSV'});
